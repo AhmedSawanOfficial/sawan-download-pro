@@ -1,0 +1,47 @@
+name: Build Sawan
+
+"on":
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - uses: nuget/setup-nuget@v2
+        with:
+          nuget-version: 'latest'
+      - name: Extract source ZIP
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Filter "*.zip" -Recurse | Select-Object -First 1
+          if ($zip) {
+            Expand-Archive $zip.FullName -DestinationPath extracted -Force
+            $inner = Get-ChildItem extracted -Directory | Select-Object -First 1
+            if ($inner) { Copy-Item "$($inner.FullName)\*" . -Recurse -Force }
+            else { Copy-Item "extracted\*" . -Recurse -Force }
+          }
+      - name: Restore
+        run: nuget restore SawanDownloadPro.sln
+      - name: Build
+        run: msbuild SawanDownloadPro.sln /p:Configuration=Release /p:Platform=x64 /m /v:minimal
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory dist\SawanDownloadPro -Force | Out-Null
+          Copy-Item "src\SawanDownloadPro.App\bin\Release\x64\*" dist\SawanDownloadPro\ -Recurse -Force
+          Get-ChildItem dist\SawanDownloadPro -Filter *.pdb | Remove-Item
+          Compress-Archive "dist\SawanDownloadPro\*" "dist\SawanDownloadPro-portable.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SawanDownloadPro-exe
+          path: src\SawanDownloadPro.App\bin\Release\x64\SawanDownloadPro.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SawanDownloadPro-portable-zip
+          path: dist\SawanDownloadPro-portable.zip
+          if-no-files-found: error
